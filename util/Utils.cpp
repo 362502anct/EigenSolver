@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
+#include <cblas.h>
 
 // Timing utilities
 std::chrono::high_resolution_clock::time_point Utils::startTimer() {
@@ -22,18 +23,17 @@ double Utils::matrixNorm(const Matrix& matrix) {
 }
 
 double Utils::frobeniusNorm(const Matrix& matrix) {
-    // For sparse matrix, directly access the stored non-zero values
-    double sum = 0.0;
+    // Use BLAS dnrm2 function to compute Frobenius norm
+    // Frobenius norm = sqrt(sum(|a_ij|^2)) = 2-norm of vectorized matrix
     const double* values = matrix.getValues();
     int nnz = matrix.getNNZ();
 
-    // Parallel computation for sparse matrices
-    #pragma omp parallel for reduction(+:sum)
-    for (int idx = 0; idx < nnz; ++idx) {
-        sum += values[idx] * values[idx];
-    }
-
-    return std::sqrt(sum);
+    // cblas_dnrm2 computes the Euclidean norm (2-norm) of a vector
+    // Parameters: N, X, INCX
+    // N - number of elements in vector
+    // X - pointer to vector
+    // INCX - stride (typically 1)
+    return cblas_dnrm2(nnz, values, 1);
 }
 
 double Utils::spectralNorm(const Matrix& matrix) {

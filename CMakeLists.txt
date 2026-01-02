@@ -15,6 +15,38 @@ else()
     message(STATUS "Debug output is DISABLED")
 endif()
 
+# SIMD optimization options
+option(ENABLE_AVX512 "Enable AVX-512 optimizations" OFF)
+option(ENABLE_AVX2 "Enable AVX2 optimizations" ON)
+option(ENABLE_AVX "Enable AVX optimizations" ON)
+option(ENABLE_SSE "Enable SSE optimizations" ON)
+
+# Determine SIMD flags
+set(SIMD_FLAGS "")
+set(SIMD_COMPILE_DEFINITIONS "")
+
+if(ENABLE_AVX512)
+    set(SIMD_FLAGS "-mavx512f -mavx512cd -mavx512vl")
+    set(SIMD_COMPILE_DEFINITIONS "-D__AVX512F__")
+    message(STATUS "SIMD: AVX-512 enabled")
+elseif(ENABLE_AVX2)
+    set(SIMD_FLAGS "-mavx2 -mfma")
+    set(SIMD_COMPILE_DEFINITIONS "-D__AVX2__")
+    message(STATUS "SIMD: AVX2 enabled")
+elseif(ENABLE_AVX)
+    set(SIMD_FLAGS "-mavx")
+    set(SIMD_COMPILE_DEFINITIONS "-D__AVX__")
+    message(STATUS "SIMD: AVX enabled")
+elseif(ENABLE_SSE)
+    set(SIMD_FLAGS "-msse4.2")
+    set(SIMD_COMPILE_DEFINITIONS "-D__SSE2__")
+    message(STATUS "SIMD: SSE enabled")
+else()
+    message(STATUS "SIMD: Disabled (using scalar implementations)")
+endif()
+
+message(STATUS "SIMD Flags: ${SIMD_FLAGS}")
+
 # Find required packages
 find_package(OpenMP REQUIRED)
 
@@ -29,7 +61,8 @@ find_library(LAPACKE_LIB lapacke)
 include_directories(${CMAKE_SOURCE_DIR})
 
 # Set compiler flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -Wextra")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -Wextra ${SIMD_FLAGS}")
+add_definitions(${SIMD_COMPILE_DEFINITIONS})
 
 # Add subdirectories
 add_subdirectory(io)
@@ -37,6 +70,7 @@ add_subdirectory(matrix)
 add_subdirectory(solver)
 add_subdirectory(util)
 add_subdirectory(main)
+add_subdirectory(benchmark)
 
 # Link directories (if needed for specific LAPACK/BLAS implementations)
 # link_directories(/usr/local/lib)

@@ -1,4 +1,6 @@
 #include "../matrix/Matrix.h"
+#include "../matrix/SymmetricMatrix.h"
+#include "../matrix/GeneralMatrix.h"
 #include "../io/MatrixMarketIO.h"
 #include "../solver/EigenSolver.h"
 #include "../util/Utils.h"
@@ -12,11 +14,15 @@ void printUsage() {
     std::cout << "Usage: eigensolver [options]" << std::endl;
     std::cout << "Options:" << std::endl;
     std::cout << "  -f <filename>    : Input matrix file in Matrix Market format" << std::endl;
-    std::cout << "  -s <size>        : Generate random matrix of given size" << std::endl;
+    std::cout << "  -s <size>        : Generate random symmetric matrix of given size" << std::endl;
+    std::cout << "  -g <size>        : Generate random general (non-symmetric) matrix" << std::endl;
+    std::cout << "  --symmetric      : Force symmetric matrix generation" << std::endl;
+    std::cout << "  --general        : Force general matrix generation" << std::endl;
     std::cout << "  -m <method>      : Eigenvalue computation method (qr, jacobi, power, inverse_power, auto)" << std::endl;
     std::cout << "  -t <tolerance>   : Convergence tolerance (default: 1e-10)" << std::endl;
     std::cout << "  -i <iterations>  : Maximum iterations (default: 1000)" << std::endl;
     std::cout << "  -h               : Show this help message" << std::endl;
+    std::cout << "\nNote: Symmetric matrices enable algorithm optimizations (Jacobi, etc.)" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -26,16 +32,27 @@ int main(int argc, char* argv[]) {
     double tolerance = 1e-10;
     int max_iterations = 1000;
     bool use_random = false;
-    
+    bool force_symmetric = false;
+    bool force_general = false;
+
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        
+
         if (arg == "-f" && i + 1 < argc) {
             filename = argv[++i];
         } else if (arg == "-s" && i + 1 < argc) {
             matrix_size = std::stoi(argv[++i]);
             use_random = true;
+            force_symmetric = true;  // -s defaults to symmetric
+        } else if (arg == "-g" && i + 1 < argc) {
+            matrix_size = std::stoi(argv[++i]);
+            use_random = true;
+            force_general = true;  // -g forces general matrix
+        } else if (arg == "--symmetric") {
+            force_symmetric = true;
+        } else if (arg == "--general") {
+            force_general = true;
         } else if (arg == "-m" && i + 1 < argc) {
             method = argv[++i];
         } else if (arg == "-t" && i + 1 < argc) {
@@ -52,32 +69,62 @@ int main(int argc, char* argv[]) {
     int num_threads = omp_get_max_threads();
     std::cout << "EigenSolver - Parallel Eigenvalue Solver" << std::endl;
     std::cout << "Using " << num_threads << " threads" << std::endl;
-    std::cout << "OpenMP version: " << _OPENMP << std::endl;
     
     try {
         Matrix matrix;
-        
+
         if (!filename.empty()) {
             // Read matrix from file
             std::cout << "Reading matrix from file: " << filename << std::endl;
-            
+
             if (MatrixMarketIO::isValidMatrixMarketFile(filename)) {
                 matrix = MatrixMarketIO::readMatrix(filename);
+
+                // Auto-detect and convert to appropriate matrix type
+                if (force_symmetric) {
+                    std::cout << "Converting to SymmetricMatrix..." << std::endl;
+                    matrix = SymmetricMatrix::fromMatrix(matrix);
+                } else if (force_general) {
+                    std::cout << "Using GeneralMatrix..." << std::endl;
+                    matrix = GeneralMatrix::fromMatrix(matrix);
+                } else {
+                    // Auto-detect symmetry
+                    bool is_sym = SolverUtils::isSymmetric(matrix);
+                    if (is_sym) {
+                        std::cout << "Detected symmetric matrix, converting to SymmetricMatrix..." << std::endl;
+                        matrix = SymmetricMatrix::fromMatrix(matrix);
+                    } else {
+                        std::cout << "Detected general (non-symmetric) matrix" << std::endl;
+                    }
+                }
             } else {
                 std::cerr << "Error: Invalid Matrix Market file format" << std::endl;
                 return 1;
             }
         } else if (use_random && matrix_size > 0) {
-            // Generate random symmetric matrix
-            std::cout << "Generating random symmetric matrix of size " << matrix_size << "x" << matrix_size << std::endl;
-            matrix = Utils::randomSymmetricMatrix(matrix_size);
+            // Generate random matrix based on type
+            if (force_symmetric || (!force_general && !force_general)) {
+                // Default to symmetric
+                std::cout << "Generating random SymmetricMatrix of size " << matrix_size << "x" << matrix_size << std::endl;
+                matrix = SymmetricMatrix::randomSymmetric(matrix_size);
+            } else {
+                std::cout << "Generating random GeneralMatrix of size " << matrix_size << "x" << matrix_size << std::endl;
+                matrix = GeneralMatrix::randomGeneral(matrix_size, matrix_size);
+            }
         } else {
-            // Default: create a small test matrix
-            std::cout << "Using default 3x3 test matrix" << std::endl;
-            matrix = Matrix(3, 3);
+            // Default: create a small test matrix (symmetric)
+            std::cout << "Using default 3x3 symmetric test matrix" << std::endl;
+            matrix = SymmetricMatrix(3);
             matrix.set(0, 0, 4.0); matrix.set(0, 1, 1.0); matrix.set(0, 2, 1.0);
             matrix.set(1, 0, 1.0); matrix.set(1, 1, 3.0); matrix.set(1, 2, 2.0);
             matrix.set(2, 0, 1.0); matrix.set(2, 1, 2.0); matrix.set(2, 2, 3.0);
+        }
+
+        // Display matrix type
+        if (SolverUtils::isSymmetricMatrix(matrix)) {
+            std::cout << "Matrix Type: SymmetricMatrix (optimizations enabled)" << std::endl;
+        } else {
+            std::cout << "Matrix Type: General Matrix" << std::endl;
         }
         
         std::cout << "Matrix size: " << matrix.getRows() << "x" << matrix.getCols() << std::endl;
@@ -92,22 +139,20 @@ int main(int argc, char* argv[]) {
         auto start_time = Utils::startTimer();
         double computation_time;
 
-        // Handle power methods (return single eigenvalue)
-        if (method == "power" || method == "inverse_power") {
-            double eigenvalue;
-            if (method == "power") {
-                eigenvalue = EigenSolver::powerMethod(matrix, max_iterations, tolerance);
-            } else {
-                eigenvalue = EigenSolver::inversePowerMethod(matrix, max_iterations, tolerance);
-            }
+        // All methods now return arrays (power and inverse_power return size-1 arrays)
+        int eigenvalue_count;
+        double* eigenvalues = nullptr;
+
+        if (method == "power") {
+            eigenvalues = EigenSolver::powerMethod(matrix, eigenvalue_count, max_iterations, tolerance);
             computation_time = Utils::stopTimer(start_time);
 
             // Display result
             std::cout << "\nComputed eigenvalue:" << std::endl;
-            std::cout << "λ" << (method == "power" ? "max" : "min") << " = " << eigenvalue << std::endl;
+            std::cout << "λmax = " << eigenvalues[0] << std::endl;
 
             // Performance statistics
-            Utils::printPerformanceStats(computation_time, "EigenSolver (" + method + ")", matrix);
+            Utils::printPerformanceStats(computation_time, "EigenSolver (power)", matrix);
 
             // Save result to file if needed
             if (!filename.empty()) {
@@ -115,17 +160,46 @@ int main(int argc, char* argv[]) {
                 std::ofstream output_file(output_filename);
                 if (output_file.is_open()) {
                     output_file << "# Eigenvalue computed by EigenSolver" << std::endl;
-                    output_file << "# Method: " << method << std::endl;
+                    output_file << "# Method: power" << std::endl;
                     output_file << "# Computation time: " << computation_time << " seconds" << std::endl;
-                    output_file << eigenvalue << std::endl;
+                    output_file << eigenvalues[0] << std::endl;
                     output_file.close();
                     std::cout << "Eigenvalue saved to: " << output_filename << std::endl;
                 }
             }
+
+            // Clean up
+            delete[] eigenvalues;
+        } else if (method == "inverse_power") {
+            eigenvalues = EigenSolver::inversePowerMethod(matrix, eigenvalue_count, max_iterations, tolerance);
+            computation_time = Utils::stopTimer(start_time);
+
+            // Display result
+            std::cout << "\nComputed eigenvalue:" << std::endl;
+            std::cout << "λmin = " << eigenvalues[0] << std::endl;
+
+            // Performance statistics
+            Utils::printPerformanceStats(computation_time, "EigenSolver (inverse_power)", matrix);
+
+            // Save result to file if needed
+            if (!filename.empty()) {
+                std::string output_filename = filename + ".eigenvals";
+                std::ofstream output_file(output_filename);
+                if (output_file.is_open()) {
+                    output_file << "# Eigenvalue computed by EigenSolver" << std::endl;
+                    output_file << "# Method: inverse_power" << std::endl;
+                    output_file << "# Computation time: " << computation_time << " seconds" << std::endl;
+                    output_file << eigenvalues[0] << std::endl;
+                    output_file.close();
+                    std::cout << "Eigenvalue saved to: " << output_filename << std::endl;
+                }
+            }
+
+            // Clean up
+            delete[] eigenvalues;
         } else {
             // Handle methods that return all eigenvalues
-            int eigenvalue_count;
-            double* eigenvalues = EigenSolver::solve(matrix, eigenvalue_count, method, max_iterations, tolerance);
+            eigenvalues = EigenSolver::solve(matrix, eigenvalue_count, method, max_iterations, tolerance);
             computation_time = Utils::stopTimer(start_time);
 
             // Sort eigenvalues in descending order

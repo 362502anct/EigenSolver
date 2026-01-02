@@ -3,20 +3,20 @@
 
 #include <iostream>
 
-// Debug模式宏定义
-// 使用方法：
-// 1. 在编译时添加 -DDEBUG 开启debug模式
-// 2. 或在CMakeLists.txt中添加 add_definitions(-DDEBUG)
-// 3. 或在代码中 #define DEBUG (不推荐)
+// Debug mode macro definitions
+// Usage:
+// 1. Add -DDEBUG during compilation to enable debug mode
+// 2. Or add add_definitions(-DDEBUG) in CMakeLists.txt
+// 3. Or #define DEBUG in code (not recommended)
 
 #ifdef DEBUG
 
-    // Debug输出宏 - 输出到标准错误流以便与正常输出区分
+    // Debug output macros - output to stderr to distinguish from normal output
     #define DEBUG_PRINT(msg) std::cerr << "[DEBUG] " << msg << std::endl
     #define DEBUG_PRINT_VAR(var) std::cerr << "[DEBUG] " << #var << " = " << (var) << std::endl
     #define DEBUG_ERROR(msg) std::cerr << "[ERROR] " << msg << std::endl
 
-    // Debug信息输出函数
+    // Debug output functions
     namespace Debug {
         inline void print(const std::string& msg) {
             std::cerr << "[DEBUG] " << msg << std::endl;
@@ -34,7 +34,7 @@
 
 #else
 
-    // Release模式下，所有debug输出将被编译器优化掉
+    // Release mode: all debug output will be optimized out by compiler
     #define DEBUG_PRINT(msg) ((void)0)
     #define DEBUG_PRINT_VAR(var) ((void)0)
     #define DEBUG_ERROR(msg) ((void)0)

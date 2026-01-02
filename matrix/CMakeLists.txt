@@ -1,6 +1,8 @@
 # Create a library for matrix operations
 add_library(matrix_lib
     Matrix.cpp
+    SymmetricMatrix.cpp
+    GeneralMatrix.cpp
 )
 
 # Link OpenMP to the matrix library

@@ -1,4 +1,5 @@
 #include "Matrix.h"
+#include "../util/SIMDDispatcher.h"
 #include <stdexcept>
 #include <random>
 #include <algorithm>
@@ -6,9 +7,13 @@
 #include <cstring>
 
 // Constructors
-Matrix::Matrix() : rows(0), cols(0), nnz(0), values(nullptr), row_indices(nullptr), col_ptrs(nullptr) {}
+Matrix::Matrix()
+    : values(nullptr), row_indices(nullptr), col_ptrs(nullptr),
+      rows(0), cols(0), nnz(0) {}
 
-Matrix::Matrix(int r, int c) : rows(r), cols(c), nnz(0), values(nullptr), row_indices(nullptr), col_ptrs(nullptr) {
+Matrix::Matrix(int r, int c)
+    : values(nullptr), row_indices(nullptr), col_ptrs(nullptr),
+      rows(r), cols(c), nnz(0) {
     if (r < 0 || c < 0) {
         throw std::invalid_argument("Matrix dimensions must be non-negative");
     }
@@ -21,7 +26,8 @@ Matrix::Matrix(int r, int c) : rows(r), cols(c), nnz(0), values(nullptr), row_in
 }
 
 Matrix::Matrix(int rows, int cols, double* vals, int* row_idxs, int* col_ptrs_data, int non_zeros)
-    : rows(rows), cols(cols), nnz(non_zeros) {
+    : values(nullptr), row_indices(nullptr), col_ptrs(nullptr),
+      rows(rows), cols(cols), nnz(non_zeros) {
     values = new double[nnz];
     row_indices = new int[nnz];
     col_ptrs = new int[cols + 1];
@@ -31,7 +37,9 @@ Matrix::Matrix(int rows, int cols, double* vals, int* row_idxs, int* col_ptrs_da
     std::memcpy(col_ptrs, col_ptrs_data, (cols + 1) * sizeof(int));
 }
 
-Matrix::Matrix(const Matrix& other) : rows(other.rows), cols(other.cols), nnz(other.nnz) {
+Matrix::Matrix(const Matrix& other)
+    : values(nullptr), row_indices(nullptr), col_ptrs(nullptr),
+      rows(other.rows), cols(other.cols), nnz(other.nnz) {
     values = new double[nnz];
     row_indices = new int[nnz];
     col_ptrs = new int[cols + 1];
@@ -43,8 +51,8 @@ Matrix::Matrix(const Matrix& other) : rows(other.rows), cols(other.cols), nnz(ot
 
 // Move constructor
 Matrix::Matrix(Matrix&& other) noexcept
-    : rows(other.rows), cols(other.cols), nnz(other.nnz),
-      values(other.values), row_indices(other.row_indices), col_ptrs(other.col_ptrs) {
+    : values(other.values), row_indices(other.row_indices), col_ptrs(other.col_ptrs),
+      rows(other.rows), cols(other.cols), nnz(other.nnz) {
     // Leave the source object in a valid but empty state
     other.rows = 0;
     other.cols = 0;
@@ -348,9 +356,10 @@ Matrix Matrix::operator*(const Matrix& other) const {
 Matrix Matrix::operator*(double scalar) const {
     Matrix result(rows, cols, values, row_indices, col_ptrs, nnz);
 
-    for (int i = 0; i < nnz; ++i) {
-        result.values[i] *= scalar;
-    }
+    // Use SIMD-optimized scalar multiplication
+    auto& dispatcher = SIMDDispatcher::getInstance();
+    auto multiply_func = dispatcher.getScalarMultiplyFunc();
+    multiply_func(result.values, nnz, scalar);
 
     return result;
 }
@@ -517,6 +526,38 @@ Matrix Matrix::multiply_parallel(const Matrix& other) const {
     delete[] temp_values;
     delete[] temp_row_indices;
     delete[] temp_col_ptrs;
+
+    return result;
+}
+
+// SIMD-optimized dense matrix multiplication
+Matrix Matrix::multiply_dense_simd(const Matrix& other) const {
+    if (cols != other.rows) {
+        throw std::invalid_argument("Number of columns in first matrix must match number of rows in second matrix");
+    }
+
+    // Convert both matrices to dense format for SIMD processing
+    double* A_dense = new double[rows * cols];
+    double* B_dense = new double[other.rows * other.cols];
+    double* C_dense = new double[rows * other.cols];
+
+    toDense(A_dense);
+    other.toDense(B_dense);
+
+    // Use SIMD-optimized matrix multiplication
+    auto& dispatcher = SIMDDispatcher::getInstance();
+    auto multiply_func = dispatcher.getMatrixMultiplyFunc();
+
+    multiply_func(C_dense, A_dense, B_dense, rows, cols, other.cols);
+
+    // Create result from dense multiplication
+    Matrix result(rows, other.cols);
+    result.is_dense = true;
+    result.dense_data = C_dense;
+
+    // Clean up temporary arrays
+    delete[] A_dense;
+    delete[] B_dense;
 
     return result;
 }
@@ -702,7 +743,8 @@ void Matrix::syev_wrapper(double* eigenvalues, Matrix& eigenvectors) const {
 }
 
 void Matrix::geev_wrapper(double* real_eigenvals, double* imag_eigenvals,
-                         Matrix& left_eigenvectors, Matrix& right_eigenvectors) const {
+                         [[maybe_unused]] Matrix& left_eigenvectors,
+                         Matrix& right_eigenvectors) const {
     if (rows != cols) {
         throw std::invalid_argument("Matrix must be square for geev");
     }
@@ -728,6 +770,8 @@ void Matrix::geev_wrapper(double* real_eigenvals, double* imag_eigenvals,
     double* vr = new double[n * n]; // Right eigenvectors
 
     // Call LAPACK function for general eigenvalue problem
+    // Note: 'N' means don't compute left eigenvectors
+    (void)left_eigenvectors;  // Suppress unused parameter warning
     info = LAPACKE_dgeev(LAPACK_COL_MAJOR, 'N', 'V', n,
                          A_copy, n,
                          real_eigenvals, imag_eigenvals,

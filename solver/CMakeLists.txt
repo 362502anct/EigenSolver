@@ -1,6 +1,11 @@
 # Create a library for solver operations
 add_library(solver_lib
     EigenSolver.cpp
+    QRSolver.cpp
+    JacobiSolver.cpp
+    PowerMethodSolver.cpp
+    InversePowerMethodSolver.cpp
+    DivideAndConquerSolver.cpp
 )
 
 # Link OpenMP and other libraries to the solver library

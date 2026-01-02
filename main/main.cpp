@@ -2,6 +2,7 @@
 #include "../io/MatrixMarketIO.h"
 #include "../solver/EigenSolver.h"
 #include "../util/Utils.h"
+#include "../util/debug.h"
 #include <iostream>
 #include <string>
 #include <algorithm>
@@ -12,7 +13,7 @@ void printUsage() {
     std::cout << "Options:" << std::endl;
     std::cout << "  -f <filename>    : Input matrix file in Matrix Market format" << std::endl;
     std::cout << "  -s <size>        : Generate random matrix of given size" << std::endl;
-    std::cout << "  -m <method>      : Eigenvalue computation method (qr, jacobi, auto)" << std::endl;
+    std::cout << "  -m <method>      : Eigenvalue computation method (qr, jacobi, power, inverse_power, auto)" << std::endl;
     std::cout << "  -t <tolerance>   : Convergence tolerance (default: 1e-10)" << std::endl;
     std::cout << "  -i <iterations>  : Maximum iterations (default: 1000)" << std::endl;
     std::cout << "  -h               : Show this help message" << std::endl;
@@ -74,9 +75,9 @@ int main(int argc, char* argv[]) {
             // Default: create a small test matrix
             std::cout << "Using default 3x3 test matrix" << std::endl;
             matrix = Matrix(3, 3);
-            matrix(0, 0) = 4.0; matrix(0, 1) = 1.0; matrix(0, 2) = 1.0;
-            matrix(1, 0) = 1.0; matrix(1, 1) = 3.0; matrix(1, 2) = 2.0;
-            matrix(2, 0) = 1.0; matrix(2, 1) = 2.0; matrix(2, 2) = 3.0;
+            matrix.set(0, 0, 4.0); matrix.set(0, 1, 1.0); matrix.set(0, 2, 1.0);
+            matrix.set(1, 0, 1.0); matrix.set(1, 1, 3.0); matrix.set(1, 2, 2.0);
+            matrix.set(2, 0, 1.0); matrix.set(2, 1, 2.0); matrix.set(2, 2, 3.0);
         }
         
         std::cout << "Matrix size: " << matrix.getRows() << "x" << matrix.getCols() << std::endl;
@@ -87,49 +88,84 @@ int main(int argc, char* argv[]) {
         
         // Solve for eigenvalues
         std::cout << "Computing eigenvalues using method: " << method << std::endl;
-        
+
         auto start_time = Utils::startTimer();
-        int eigenvalue_count;
-        double* eigenvalues = EigenSolver::solve(matrix, eigenvalue_count, method, max_iterations, tolerance);
-        double computation_time = Utils::stopTimer(start_time);
-        
-        // Sort eigenvalues in descending order
-        std::sort(eigenvalues, eigenvalues + eigenvalue_count, [](double a, double b) { return a > b; });
-        
-        // Display results
-        std::cout << "\nComputed eigenvalues:" << std::endl;
-        for (int i = 0; i < eigenvalue_count; ++i) {
-            std::cout << "λ" << i+1 << " = " << eigenvalues[i] << std::endl;
-        }
-        
-        // Verify results
-        bool verification = Utils::verifyEigenvalues(matrix, eigenvalues, eigenvalue_count);
-        std::cout << "\nEigenvalue verification (trace check): " << (verification ? "PASSED" : "FAILED") << std::endl;
-        
-        // Performance statistics
-        Utils::printPerformanceStats(computation_time, "EigenSolver (" + method + ")", matrix);
-        
-        // Save results to file if needed
-        if (!filename.empty()) {
-            std::string output_filename = filename + ".eigenvals";
-            std::ofstream output_file(output_filename);
-            if (output_file.is_open()) {
-                output_file << "# Eigenvalues computed by EigenSolver" << std::endl;
-                output_file << "# Method: " << method << std::endl;
-                output_file << "# Computation time: " << computation_time << " seconds" << std::endl;
-                output_file << "# Number of eigenvalues: " << eigenvalue_count << std::endl;
-                
-                for (int i = 0; i < eigenvalue_count; ++i) {
-                    output_file << eigenvalues[i] << std::endl;
-                }
-                
-                output_file.close();
-                std::cout << "Eigenvalues saved to: " << output_filename << std::endl;
+        double computation_time;
+
+        // Handle power methods (return single eigenvalue)
+        if (method == "power" || method == "inverse_power") {
+            double eigenvalue;
+            if (method == "power") {
+                eigenvalue = EigenSolver::powerMethod(matrix, max_iterations, tolerance);
+            } else {
+                eigenvalue = EigenSolver::inversePowerMethod(matrix, max_iterations, tolerance);
             }
+            computation_time = Utils::stopTimer(start_time);
+
+            // Display result
+            std::cout << "\nComputed eigenvalue:" << std::endl;
+            std::cout << "λ" << (method == "power" ? "max" : "min") << " = " << eigenvalue << std::endl;
+
+            // Performance statistics
+            Utils::printPerformanceStats(computation_time, "EigenSolver (" + method + ")", matrix);
+
+            // Save result to file if needed
+            if (!filename.empty()) {
+                std::string output_filename = filename + ".eigenvals";
+                std::ofstream output_file(output_filename);
+                if (output_file.is_open()) {
+                    output_file << "# Eigenvalue computed by EigenSolver" << std::endl;
+                    output_file << "# Method: " << method << std::endl;
+                    output_file << "# Computation time: " << computation_time << " seconds" << std::endl;
+                    output_file << eigenvalue << std::endl;
+                    output_file.close();
+                    std::cout << "Eigenvalue saved to: " << output_filename << std::endl;
+                }
+            }
+        } else {
+            // Handle methods that return all eigenvalues
+            int eigenvalue_count;
+            double* eigenvalues = EigenSolver::solve(matrix, eigenvalue_count, method, max_iterations, tolerance);
+            computation_time = Utils::stopTimer(start_time);
+
+            // Sort eigenvalues in descending order
+            std::sort(eigenvalues, eigenvalues + eigenvalue_count, [](double a, double b) { return a > b; });
+
+            // Display results
+            std::cout << "\nComputed eigenvalues:" << std::endl;
+            for (int i = 0; i < eigenvalue_count; ++i) {
+                std::cout << "λ" << i+1 << " = " << eigenvalues[i] << std::endl;
+            }
+
+            // Verify results
+            bool verification = Utils::verifyEigenvalues(matrix, eigenvalues, eigenvalue_count);
+            std::cout << "\nEigenvalue verification (trace check): " << (verification ? "PASSED" : "FAILED") << std::endl;
+
+            // Performance statistics
+            Utils::printPerformanceStats(computation_time, "EigenSolver (" + method + ")", matrix);
+
+            // Save results to file if needed
+            if (!filename.empty()) {
+                std::string output_filename = filename + ".eigenvals";
+                std::ofstream output_file(output_filename);
+                if (output_file.is_open()) {
+                    output_file << "# Eigenvalues computed by EigenSolver" << std::endl;
+                    output_file << "# Method: " << method << std::endl;
+                    output_file << "# Computation time: " << computation_time << " seconds" << std::endl;
+                    output_file << "# Number of eigenvalues: " << eigenvalue_count << std::endl;
+
+                    for (int i = 0; i < eigenvalue_count; ++i) {
+                        output_file << eigenvalues[i] << std::endl;
+                    }
+
+                    output_file.close();
+                    std::cout << "Eigenvalues saved to: " << output_filename << std::endl;
+                }
+            }
+
+            // Clean up allocated memory
+            delete[] eigenvalues;
         }
-        
-        // Clean up allocated memory
-        delete[] eigenvalues;
         
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

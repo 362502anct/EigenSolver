@@ -17,23 +17,20 @@ private:
     int cols;
     int nnz;             // Number of non-zeros
 
-    // Dense format (for compatibility with some operations)
-    bool is_dense;
-    double* dense_data;  // Only used when is_dense is true
-
 public:
     // Constructors
     Matrix();
     Matrix(int rows, int cols);
-    Matrix(int rows, int cols, const double* dense_data);  // From dense data
     Matrix(int rows, int cols, double* values, int* row_indices, int* col_ptrs, int nnz);  // From CSC data
     Matrix(const Matrix& other);
-    
+    Matrix(Matrix&& other) noexcept;  // Move constructor
+
     // Destructor
     ~Matrix();
-    
-    // Assignment operator
+
+    // Assignment operators
     Matrix& operator=(const Matrix& other);
+    Matrix& operator=(Matrix&& other) noexcept;  // Move assignment
 
     // Swap function for copy-and-swap idiom
     void swap(Matrix& other) noexcept;
@@ -41,16 +38,15 @@ public:
     int getRows() const { return rows; }
     int getCols() const { return cols; }
     int getNNZ() const { return nnz; }
-    bool isDense() const { return is_dense; }
 
     // Access sparse matrix data (for efficient operations)
     const double* getValues() const { return values; }
     const int* getRowIndices() const { return row_indices; }
     const int* getColPtrs() const { return col_ptrs; }
     
-    // Access elements (for dense matrices)
-    double& operator()(int row, int col);
+    // Access elements (read-only for sparse matrices)
     double operator()(int row, int col) const;
+    void set(int row, int col, double value);  // Set element value
     
     // Basic operations
     Matrix operator+(const Matrix& other) const;
@@ -63,13 +59,10 @@ public:
     Matrix multiply(const Matrix& other) const;  // Using BLAS/Sparse operations
     Matrix multiply_parallel(const Matrix& other) const;  // Parallel multiplication
     
-    // Convert between dense and sparse
+    // Convert to dense format (for LAPACK operations)
     void toDense(double* result) const;
-    void toSparse(const double* dense_data, int rows, int cols);
-    Matrix toDenseMatrix() const;
-    Matrix toSparseMatrix() const;
     
-    // LAPACK operations (for dense matrices)
+    // LAPACK operations (converts to dense internally)
     double* eigenvalues() const;  // Compute eigenvalues using LAPACK
     std::pair<double*, Matrix> eigensystem() const;  // Compute eigenvalues and eigenvectors
     

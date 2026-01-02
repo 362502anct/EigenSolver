@@ -10,7 +10,7 @@ double* EigenSolver::qrAlgorithm(const Matrix& matrix, int& eigenvalue_count, in
         throw std::invalid_argument("Matrix must be square for eigenvalue computation");
     }
     
-    Matrix A = matrix.toDenseMatrix();  // Convert to dense for algorithm
+    Matrix A(matrix);  // Work with sparse matrix
     int n = A.getRows();
     eigenvalue_count = n;
     double* eigenvalues = new double[n];
@@ -66,7 +66,7 @@ double* EigenSolver::qrAlgorithmParallel(const Matrix& matrix, int& eigenvalue_c
         throw std::invalid_argument("Matrix must be square for eigenvalue computation");
     }
     
-    Matrix A = matrix.toDenseMatrix();  // Convert to dense for algorithm
+    Matrix A(matrix);  // Work with sparse matrix
     int n = A.getRows();
     eigenvalue_count = n;
     double* eigenvalues = new double[n];
@@ -181,7 +181,7 @@ double EigenSolver::inversePowerMethod(const Matrix& matrix, int maxIterations, 
     
     // For inverse power method, we need to solve (A - shift*I)x = b at each iteration
     // This is a simplified version - in practice, you'd want to factorize A once
-    Matrix A = matrix.toDenseMatrix();
+    Matrix A(matrix);
     int n = A.getRows();
     
     // Initialize random vector
@@ -203,7 +203,7 @@ double EigenSolver::inversePowerMethod(const Matrix& matrix, int maxIterations, 
     for (int iter = 0; iter < maxIterations; ++iter) {
         // Solve A * w = v (equivalent to w = A^(-1) * v)
         // This is a simplified implementation - in practice, use LU decomposition
-        Matrix A_inv = A.toDenseMatrix(); // In a real implementation, you'd compute the inverse
+        Matrix A_inv(A); // In a real implementation, you'd compute the inverse
         Matrix w = A_inv.multiply(v);
         
         // Calculate Rayleigh quotient
@@ -246,7 +246,7 @@ double* EigenSolver::jacobiMethod(const Matrix& matrix, int& eigenvalue_count, i
         throw std::invalid_argument("Jacobi method requires a symmetric matrix");
     }
     
-    Matrix A = matrix.toDenseMatrix();  // Work with a copy
+    Matrix A(matrix);  // Work with a copy
     int n = A.getRows();
     eigenvalue_count = n;
     double* eigenvalues = new double[n];
@@ -281,24 +281,24 @@ double* EigenSolver::jacobiMethod(const Matrix& matrix, int& eigenvalue_count, i
         Matrix A_new = A;
         
         // Zero out the p,q and q,p elements
-        A_new(p, q) = 0.0;
-        A_new(q, p) = 0.0;
+        A_new.set(p, q, 0.0);
+        A_new.set(q, p, 0.0);
         
         // Update the p-th and q-th rows and columns
         for (int i = 0; i < n; ++i) {
             if (i != p && i != q) {
                 double temp_p = c * A(i, p) - s * A(i, q);
                 double temp_q = s * A(i, p) + c * A(i, q);
-                A_new(i, p) = temp_p;
-                A_new(p, i) = temp_p;  // Maintain symmetry
-                A_new(i, q) = temp_q;
-                A_new(q, i) = temp_q;  // Maintain symmetry
+                A_new.set(i, p, temp_p);
+                A_new.set(p, i, temp_p);  // Maintain symmetry
+                A_new.set(i, q, temp_q);
+                A_new.set(q, i, temp_q);  // Maintain symmetry
             }
         }
         
         // Update diagonal elements
-        A_new(p, p) = c*c*A(p, p) - 2*s*c*A(p, q) + s*s*A(q, q);
-        A_new(q, q) = s*s*A(p, p) + 2*s*c*A(p, q) + c*c*A(q, q);
+        A_new.set(p, p, c*c*A(p, p) - 2*s*c*A(p, q) + s*s*A(q, q));
+        A_new.set(q, q, s*s*A(p, p) + 2*s*c*A(p, q) + c*c*A(q, q));
         
         A = A_new;
     }
@@ -321,7 +321,7 @@ double* EigenSolver::jacobiMethodParallel(const Matrix& matrix, int& eigenvalue_
         throw std::invalid_argument("Jacobi method requires a symmetric matrix");
     }
     
-    Matrix A = matrix.toDenseMatrix();  // Work with a copy
+    Matrix A(matrix);  // Work with a copy
     int n = A.getRows();
     eigenvalue_count = n;
     double* eigenvalues = new double[n];
@@ -357,8 +357,8 @@ double* EigenSolver::jacobiMethodParallel(const Matrix& matrix, int& eigenvalue_
         Matrix A_new = A;
         
         // Zero out the p,q and q,p elements
-        A_new(p, q) = 0.0;
-        A_new(q, p) = 0.0;
+        A_new.set(p, q, 0.0);
+        A_new.set(q, p, 0.0);
         
         // Update the p-th and q-th rows and columns in parallel
         #pragma omp parallel sections
@@ -369,8 +369,8 @@ double* EigenSolver::jacobiMethodParallel(const Matrix& matrix, int& eigenvalue_
                 for (int i = 0; i < n; ++i) {
                     if (i != p && i != q) {
                         double temp_p = c * A(i, p) - s * A(i, q);
-                        A_new(i, p) = temp_p;
-                        A_new(p, i) = temp_p;  // Maintain symmetry
+                        A_new.set(i, p, temp_p);
+                        A_new.set(p, i, temp_p);  // Maintain symmetry
                     }
                 }
             }
@@ -380,16 +380,16 @@ double* EigenSolver::jacobiMethodParallel(const Matrix& matrix, int& eigenvalue_
                 for (int i = 0; i < n; ++i) {
                     if (i != p && i != q) {
                         double temp_q = s * A(i, p) + c * A(i, q);
-                        A_new(i, q) = temp_q;
-                        A_new(q, i) = temp_q;  // Maintain symmetry
+                        A_new.set(i, q, temp_q);
+                        A_new.set(q, i, temp_q);  // Maintain symmetry
                     }
                 }
             }
             #pragma omp section
             {
                 // Update diagonal elements
-                A_new(p, p) = c*c*A(p, p) - 2*s*c*A(p, q) + s*s*A(q, q);
-                A_new(q, q) = s*s*A(p, p) + 2*s*c*A(p, q) + c*c*A(q, q);
+                A_new.set(p, p, c*c*A(p, p) - 2*s*c*A(p, q) + s*s*A(q, q));
+                A_new.set(q, q, s*s*A(p, p) + 2*s*c*A(p, q) + c*c*A(q, q));
             }
         }
         
@@ -412,14 +412,14 @@ Matrix EigenSolver::qrDecomposition(const Matrix& matrix, Matrix& Q, Matrix& R) 
     
     Q = Matrix::zeros(m, n);
     R = Matrix::zeros(n, n);
-    
+
     // Gram-Schmidt process
-    Matrix A = matrix.toDenseMatrix();
-    
+    Matrix A(matrix);
+
     for (int j = 0; j < n; ++j) {
         // Start with the j-th column of A
         for (int i = 0; i < m; ++i) {
-            Q(i, j) = A(i, j);
+            Q.set(i, j, A(i, j));
         }
         
         // Subtract projections onto previous vectors
@@ -430,7 +430,7 @@ Matrix EigenSolver::qrDecomposition(const Matrix& matrix, Matrix& Q, Matrix& R) 
             }
             
             for (int k = 0; k < m; ++k) {
-                Q(k, j) -= dot_product * Q(k, i);
+                Q.set(k, j, Q(k, j) - dot_product * Q(k, i));
             }
         }
         
@@ -441,11 +441,11 @@ Matrix EigenSolver::qrDecomposition(const Matrix& matrix, Matrix& Q, Matrix& R) 
         }
         norm = std::sqrt(norm);
         
-        R(j, j) = norm;
+        R.set(j, j, norm);
         
         if (norm > 1e-15) {
             for (int i = 0; i < m; ++i) {
-                Q(i, j) /= norm;
+                Q.set(i, j, Q(i, j) / norm);
             }
         }
         
@@ -455,7 +455,7 @@ Matrix EigenSolver::qrDecomposition(const Matrix& matrix, Matrix& Q, Matrix& R) 
             for (int k = 0; k < m; ++k) {
                 dot_product += A(k, j) * Q(k, i);
             }
-            R(i, j) = dot_product;
+            R.set(i, j, dot_product);
         }
     }
     
@@ -469,14 +469,14 @@ Matrix EigenSolver::qrDecompositionParallel(const Matrix& matrix, Matrix& Q, Mat
     
     Q = Matrix::zeros(m, n);
     R = Matrix::zeros(n, n);
-    
-    Matrix A = matrix.toDenseMatrix();
-    
+
+    Matrix A(matrix);
+
     for (int j = 0; j < n; ++j) {
         // Start with the j-th column of A
         #pragma omp parallel for
         for (int i = 0; i < m; ++i) {
-            Q(i, j) = A(i, j);
+            Q.set(i, j, A(i, j));
         }
         
         // Subtract projections onto previous vectors
@@ -489,7 +489,7 @@ Matrix EigenSolver::qrDecompositionParallel(const Matrix& matrix, Matrix& Q, Mat
             
             #pragma omp parallel for
             for (int k = 0; k < m; ++k) {
-                Q(k, j) -= dot_product * Q(k, i);
+                Q.set(k, j, Q(k, j) - dot_product * Q(k, i));
             }
         }
         
@@ -501,12 +501,12 @@ Matrix EigenSolver::qrDecompositionParallel(const Matrix& matrix, Matrix& Q, Mat
         }
         norm = std::sqrt(norm);
         
-        R(j, j) = norm;
+        R.set(j, j, norm);
         
         if (norm > 1e-15) {
             #pragma omp parallel for
             for (int i = 0; i < m; ++i) {
-                Q(i, j) /= norm;
+                Q.set(i, j, Q(i, j) / norm);
             }
         }
         
@@ -518,7 +518,7 @@ Matrix EigenSolver::qrDecompositionParallel(const Matrix& matrix, Matrix& Q, Mat
             for (int k = 0; k < m; ++k) {
                 dot_product += A(k, j) * Q(k, i);
             }
-            R(i, j) = dot_product;
+            R.set(i, j, dot_product);
         }
     }
     

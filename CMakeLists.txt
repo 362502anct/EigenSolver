@@ -4,6 +4,17 @@ project(EigenSolver)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Debug mode option (default: OFF)
+option(ENABLE_DEBUG "Enable debug output" OFF)
+
+# Add DEBUG definition if debug mode is enabled
+if(ENABLE_DEBUG)
+    add_definitions(-DDEBUG)
+    message(STATUS "Debug output is ENABLED")
+else()
+    message(STATUS "Debug output is DISABLED")
+endif()
+
 # Find required packages
 find_package(OpenMP REQUIRED)
 

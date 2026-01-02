@@ -22,31 +22,18 @@ double Utils::matrixNorm(const Matrix& matrix) {
 }
 
 double Utils::frobeniusNorm(const Matrix& matrix) {
-    if (matrix.isDense()) {
-        double sum = 0.0;
-        int rows = matrix.getRows();
-        int cols = matrix.getCols();
+    // For sparse matrix, directly access the stored non-zero values
+    double sum = 0.0;
+    const double* values = matrix.getValues();
+    int nnz = matrix.getNNZ();
 
-        for (int i = 0; i < rows; ++i) {
-            for (int j = 0; j < cols; ++j) {
-                double val = matrix(i, j);
-                sum += val * val;
-            }
-        }
-
-        return std::sqrt(sum);
-    } else {
-        // For sparse matrix, directly access the stored non-zero values
-        double sum = 0.0;
-        const double* values = matrix.getValues();
-        int nnz = matrix.getNNZ();
-
-        for (int idx = 0; idx < nnz; ++idx) {
-            sum += values[idx] * values[idx];
-        }
-
-        return std::sqrt(sum);
+    // Parallel computation for sparse matrices
+    #pragma omp parallel for reduction(+:sum)
+    for (int idx = 0; idx < nnz; ++idx) {
+        sum += values[idx] * values[idx];
     }
+
+    return std::sqrt(sum);
 }
 
 double Utils::spectralNorm(const Matrix& matrix) {
@@ -260,7 +247,7 @@ double Utils::residualError(const Matrix& matrix, const double* eigenvalues, int
         // Extract i-th eigenvector
         Matrix v(n, 1);
         for (int j = 0; j < n; ++j) {
-            v(j, 0) = eigenvectors(j, i);
+            v.set(j, 0, eigenvectors(j, i));
         }
         
         // Compute A*v
@@ -293,11 +280,10 @@ void Utils::printPerformanceStats(double time_taken, const std::string& algorith
 // Random utilities
 Matrix Utils::randomSymmetricMatrix(int size, double min, double max) {
     Matrix matrix = Matrix::random(size, size, min, max);
-    
+
     // Make it symmetric by averaging with its transpose
-    Matrix A = matrix.toDenseMatrix();
-    Matrix AT = A.transpose();
-    Matrix symmetric = (A + AT) * 0.5;
+    Matrix AT = matrix.transpose();
+    Matrix symmetric = (matrix + AT) * 0.5;
     return symmetric;
 }
 
@@ -314,31 +300,31 @@ Matrix Utils::randomOrthogonalMatrix(int size) {
     for (int j = 0; j < size; ++j) {
         // Copy j-th column
         for (int i = 0; i < size; ++i) {
-            Q(i, j) = random_matrix(i, j);
+            Q.set(i, j, random_matrix(i, j));
         }
-        
+
         // Orthogonalize against previous columns
         for (int i = 0; i < j; ++i) {
             double dot_product = 0.0;
             for (int k = 0; k < size; ++k) {
                 dot_product += Q(k, j) * Q(k, i);
             }
-            
+
             for (int k = 0; k < size; ++k) {
-                Q(k, j) -= dot_product * Q(k, i);
+                Q.set(k, j, Q(k, j) - dot_product * Q(k, i));
             }
         }
-        
+
         // Normalize
         double norm = 0.0;
         for (int i = 0; i < size; ++i) {
             norm += Q(i, j) * Q(i, j);
         }
         norm = std::sqrt(norm);
-        
+
         if (norm > 1e-15) {
             for (int i = 0; i < size; ++i) {
-                Q(i, j) /= norm;
+                Q.set(i, j, Q(i, j) / norm);
             }
         }
     }

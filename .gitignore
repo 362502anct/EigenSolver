@@ -1,0 +1,49 @@
+# Build directories
+build/
+bin/
+lib/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+*.cmake
+!CMakeLists.txt
+
+# Ninja build files
+.ninja_deps
+.ninja_log
+build.ninja
+
+# Object files and libraries
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# Executables
+eigensolver
+*.exe
+
+# Output and test files
+*.out
+*.eigenvals
+test_matrix.mtx
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Debug files
+*.log
+*.d
+
+# Core dumps
+core
+core.*
